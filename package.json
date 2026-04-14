@@ -1,7 +1,7 @@
 {
   "name": "hooks-for-codex",
   "version": "1.0.0",
-  "description": "Lifecycle hooks for the OpenAI Codex desktop app — bringing Claude Code-level hook power to Codex",
+  "description": "Lifecycle hooks for the OpenAI Codex desktop app (not CLI) — bringing Claude Code-level hook power to Codex",
   "main": "src/index.js",
   "bin": {
     "codex-hooks": "./bin/codex-hooks.js",

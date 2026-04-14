@@ -14,11 +14,9 @@
  *   • Thread lifecycle         → ThreadStarted
  *
  * PREREQUISITES
- *   1. Start the Codex App Server in WebSocket mode:
- *        codex app-server --listen ws://127.0.0.1:4500
- *      (The desktop app does this automatically when running.)
- *   2. Install the ws package:
- *        npm install ws
+ *   1. The Codex desktop app must be running (it starts the App Server
+ *      automatically on port 4500).
+ *   2. Install the ws package: npm install ws
  *
  * USAGE
  *   codex-hooks-daemon [options]

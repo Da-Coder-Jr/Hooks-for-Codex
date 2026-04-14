@@ -49,16 +49,7 @@ echo ""
 
 # ── 1. Check Codex is installed ──────────────────────────────────────
 
-section "Step 1: Checking Codex installation"
-
-if command -v codex &>/dev/null; then
-  CODEX_VERSION=$(codex --version 2>/dev/null || echo "unknown")
-  ok "Codex found: $CODEX_VERSION"
-else
-  warn "Codex CLI not found in PATH."
-  warn "The desktop app does not require the CLI, but the feature flag must"
-  warn "still be set in $CODEX_DIR/config.toml"
-fi
+section "Step 1: Checking Codex desktop app installation"
 
 if [ -d "$CODEX_DIR" ]; then
   ok "Codex config dir exists: $CODEX_DIR"
@@ -167,13 +158,13 @@ echo ""
 echo "  NATIVE HOOKS (hooks.json — works now):"
 echo "  ─────────────────────────────────────"
 echo "  • Edit $PROJECT_HOOKS_FILE"
-echo "  • Restart Codex for the feature flag to take effect"
+echo "  • Restart the Codex desktop app for the feature flag to take effect"
 echo "  • Run 'codex-hooks list' to see loaded hooks"
 echo "  • Run 'codex-hooks validate' to check for errors"
 echo ""
 echo "  EXTENDED HOOKS (daemon — covers apply_patch + file approvals):"
 echo "  ───────────────────────────────────────────────────────────────"
-echo "  • Start App Server: codex app-server --listen ws://127.0.0.1:4500"
+echo "  • Open the Codex desktop app (App Server starts automatically)"
 echo "  • Start daemon:     codex-hooks-daemon"
 echo "  • Add PreFilePatch, PostFilePatch, or CommandApproval rules to hooks.json"
 echo ""

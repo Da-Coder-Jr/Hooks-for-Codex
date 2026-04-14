@@ -1,7 +1,7 @@
 "use strict";
 
 /**
- * Hook event definitions for the Codex app (desktop + CLI).
+ * Hook event definitions for the Codex desktop app.
  *
  * TWO TIERS of events:
  *

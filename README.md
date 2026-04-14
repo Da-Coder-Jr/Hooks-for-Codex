@@ -2,31 +2,33 @@
 
 Lifecycle hooks for the [OpenAI Codex desktop app](https://openai.com/index/introducing-the-codex-app/) — bringing Claude Code-level hook power to Codex.
 
+> This project is for the **Codex desktop app** you download and install (macOS / Windows), **not** the Codex CLI.
+
 ---
 
 ## What this is
 
-The Codex app has a basic hooks system that is disabled by default and has significant gaps:
+The Codex desktop app has a built-in hooks system, but it's **disabled by default** and has significant gaps:
 
-| Capability | Codex native | hooks-for-codex |
+| Capability | Codex app native | hooks-for-codex |
 |---|---|---|
-| Feature flag required | Yes | Yes (same flag) |
+| Feature flag required | Yes (hidden) | Auto-enabled by installer |
 | `PreToolUse` / `PostToolUse` for shell commands | Yes | Yes |
 | `PreToolUse` / `PostToolUse` for **apply_patch** (file edits) | **No** ([#16732](https://github.com/openai/codex/issues/16732)) | **Yes** (daemon) |
 | `UserPromptSubmit` / `SessionStart` / `Stop` | Yes | Yes |
 | Command approval automation | No | **Yes** (daemon) |
 | File change approval automation | No | **Yes** (daemon) |
 | Turn & thread lifecycle events | No | **Yes** (daemon) |
-| HTTP hooks | No | **Yes** |
-| LLM prompt hooks | No | **Yes** |
-| Config validation CLI | No | **Yes** |
+| HTTP webhook hooks | No | **Yes** |
+| LLM prompt evaluation hooks | No | **Yes** |
+| Config validation & doctor CLI | No | **Yes** |
 | Ready-to-use example scripts | No | **Yes** |
 
-This project gives you **two layers** of hooks:
+This project gives you **two tiers** of hooks:
 
-- **Tier 1 — Native hooks** (`hooks.json`): Works directly with the Codex runtime. Requires the `codex_hooks` feature flag. Same as what Codex has built-in, but this repo gives you tooling, validation, templates, and examples.
+- **Tier 1 — Native hooks** (`hooks.json`): Works directly inside the Codex desktop app's runtime. You get tooling, validation, templates, and ready-to-use scripts on top of the built-in system.
 
-- **Tier 2 — Extended hooks** (`codex-hooks-daemon`): A companion daemon that connects to the Codex App Server JSON-RPC API and fires hooks for all the events the native system misses — especially `apply_patch` file edits, which is the biggest gap.
+- **Tier 2 — Extended hooks** (`codex-hooks-daemon`): A companion daemon that connects to the Codex desktop app's internal App Server and fires hooks for all the events the native system misses — especially **apply_patch file edits**, which is the biggest gap.
 
 ---
 
@@ -38,7 +40,7 @@ git clone https://github.com/Da-Coder-Jr/Hooks-for-Codex
 cd Hooks-for-Codex
 npm install          # installs optional 'ws' dependency for the daemon
 
-# 2. Enable the feature flag and create a starter config
+# 2. Run the installer (enables feature flag + creates hooks.json)
 bash install.sh
 
 # 3. Or do it manually:
@@ -52,18 +54,18 @@ open .codex/hooks.json
 codex-hooks validate
 codex-hooks list
 
-# 6. Restart Codex — native hooks are now active
+# 6. Restart the Codex desktop app — native hooks are now active!
 
-# 7. For extended hooks (apply_patch, approvals, turn events):
-codex app-server --listen ws://127.0.0.1:4500  # in one terminal
-codex-hooks-daemon                              # in another terminal
+# 7. For extended hooks (apply_patch, file approvals, turn events):
+#    Open the Codex desktop app (App Server starts automatically)
+codex-hooks-daemon   # start the extended hooks daemon
 ```
 
 ---
 
 ## How hooks work
 
-Hooks are **shell commands** (or HTTP endpoints, or LLM prompts) that fire at specific points in the Codex agent loop. Each hook receives a **JSON payload on stdin** and can write a **JSON decision on stdout**.
+Hooks are **shell commands** (or HTTP endpoints, or LLM prompts) that fire at specific points in the Codex desktop app's agent loop. Each hook receives a **JSON payload on stdin** and can write a **JSON decision on stdout**.
 
 ### hooks.json structure
 
@@ -124,31 +126,31 @@ Place `hooks.json` next to a `config.toml` in any of these locations (all are me
 
 ### Tier 1 — Native (hooks.json)
 
-These fire inside the Codex Rust runtime. Require `codex_hooks = true`.
+These fire inside the Codex desktop app's Rust runtime. Require `codex_hooks = true` in config.toml.
 
 | Event | When | Blocking? | Matcher field |
 |---|---|---|---|
-| `SessionStart` | Session begins | No | — |
-| `UserPromptSubmit` | User submits a prompt | **Yes** (exit 2 = block) | — |
+| `SessionStart` | Session / thread begins | No | -- |
+| `UserPromptSubmit` | User submits a prompt | **Yes** (exit 2 = block) | -- |
 | `PreToolUse` | Before a shell command runs | **Yes** (exit 2 = block) | `tool_name` |
 | `PostToolUse` | After a shell command completes | No | `tool_name` |
-| `Stop` | Agent finishes a turn | **Yes** (exit 2 = force continue) | — |
+| `Stop` | Agent finishes a turn | **Yes** (exit 2 = force continue) | -- |
 
-> **Note:** `PreToolUse`/`PostToolUse` only fire for Bash/shell commands. They do **not** fire for `apply_patch` (file edits). Use Tier 2 for that.
+> **Note:** `PreToolUse`/`PostToolUse` only fire for Bash/shell commands in the Codex desktop app. They do **not** fire for `apply_patch` (file edits). Use Tier 2 for that.
 
 ### Tier 2 — Extended (codex-hooks-daemon)
 
-These fire via the App Server JSON-RPC API. Require the daemon to be running.
+These fire via the Codex desktop app's internal App Server. The daemon connects automatically when the app is open.
 
 | Event | When | Blocking? | Matcher field |
 |---|---|---|---|
 | `PreFilePatch` | Before apply_patch writes a file | **Yes** | `file_path` |
 | `PostFilePatch` | After apply_patch writes a file | No | `file_path` |
-| `CommandApproval` | When Codex pauses for command approval | **Yes** | `tool_name` |
-| `FileChangeApproval` | When Codex pauses for file change approval | **Yes** | `file_path` |
-| `TurnStarted` | When an agent turn begins | No | — |
-| `TurnCompleted` | When an agent turn completes | No | — |
-| `ThreadStarted` | When a new conversation thread is created | No | — |
+| `CommandApproval` | When the app pauses for command approval | **Yes** | `tool_name` |
+| `FileChangeApproval` | When the app pauses for file change approval | **Yes** | `file_path` |
+| `TurnStarted` | When an agent turn begins | No | -- |
+| `TurnCompleted` | When an agent turn completes | No | -- |
+| `ThreadStarted` | When a new conversation thread is created | No | -- |
 
 ---
 
@@ -196,7 +198,7 @@ Additional fields by event:
 }
 ```
 
-**`PreFilePatch` / `PostFilePatch`** (daemon)
+**`PreFilePatch` / `PostFilePatch`** (extended / daemon)
 ```json
 {
   "turn_id": "turn_xyz",
@@ -210,7 +212,7 @@ Additional fields by event:
 
 ## Hook output (stdout JSON)
 
-Return JSON on stdout (exit 0) to influence Codex behavior.
+Return JSON on stdout (exit 0) to influence behavior.
 
 ### Block an action (exit 2)
 
@@ -282,7 +284,7 @@ Runs a shell script. Receives JSON on stdin, writes JSON on stdout.
 
 ### http
 
-POSTs the event JSON to an HTTP endpoint. Useful for logging services or approval systems.
+POSTs the event JSON to an HTTP endpoint. Useful for logging services or external approval systems.
 
 ```json
 {
@@ -298,7 +300,7 @@ A 2xx response with JSON in the same format as command output is parsed for deci
 
 ### prompt
 
-Sends the event to an LLM for evaluation. Requires a `llmEvaluator` function if used programmatically, or configure your own evaluator script.
+Sends the event to an LLM for evaluation. Requires a `llmEvaluator` function if used programmatically.
 
 ```json
 {
@@ -382,7 +384,7 @@ Run `codex-hooks init --template=<name>` to start from a template:
 
 ---
 
-## CLI reference
+## codex-hooks commands
 
 ```
 codex-hooks init [--global] [--template=basic|security]
@@ -397,23 +399,20 @@ codex-hooks files
 
 ---
 
-## Extended daemon reference
+## Extended daemon
 
 ```
 codex-hooks-daemon [--url=ws://127.0.0.1:4500] [--token=<token>] [--project=<dir>] [--debug]
 ```
 
-The daemon connects to the Codex App Server and fires extended hooks. Start it alongside Codex:
+The daemon connects to the Codex desktop app's internal App Server and fires extended hooks. Just make sure the Codex desktop app is open:
 
 ```bash
-# Terminal 1 — start Codex with App Server
-codex app-server --listen ws://127.0.0.1:4500
-
-# Terminal 2 — start extended hooks daemon
+# Open the Codex desktop app, then:
 codex-hooks-daemon --debug
 ```
 
-The daemon auto-reconnects if Codex restarts.
+The daemon auto-reconnects if the app restarts.
 
 ---
 
@@ -430,7 +429,7 @@ codex_hooks = true
 
 **Manual:** edit `~/.codex/config.toml` (global) or `.codex/config.toml` (project)
 
-Restart Codex after changing the flag.
+Restart the Codex desktop app after changing the flag.
 
 ---
 
@@ -438,7 +437,7 @@ Restart Codex after changing the flag.
 
 | File | Scope | Notes |
 |---|---|---|
-| `~/.codex/config.toml` | Global | Feature flag here |
+| `~/.codex/config.toml` | Global | Feature flag goes here |
 | `~/.codex/hooks.json` | Global | Applies to all projects |
 | `.codex/config.toml` | Project | Can override global |
 | `.codex/hooks.json` | Project | Committable |
@@ -448,22 +447,22 @@ All discovered `hooks.json` files are **merged** — later layers add rules on t
 
 ---
 
-## Known Codex limitations (native system)
+## Known Codex desktop app limitations
 
 These are open issues in the Codex repo that the extended daemon works around:
 
-- [#16732](https://github.com/openai/codex/issues/16732) — `apply_patch` doesn't fire `PreToolUse`/`PostToolUse` → use `PreFilePatch`/`PostFilePatch`
-- [#16246](https://github.com/openai/codex/issues/16246) — `PostToolUse` missing for long-running commands → use `TurnCompleted`
+- [#16732](https://github.com/openai/codex/issues/16732) — `apply_patch` doesn't fire `PreToolUse`/`PostToolUse` -> use `PreFilePatch`/`PostFilePatch`
+- [#16246](https://github.com/openai/codex/issues/16246) — `PostToolUse` missing for long-running commands -> use `TurnCompleted`
 - [#16226](https://github.com/openai/codex/issues/16226) — No sub-agent vs main-agent distinction in hooks
-- [#15311](https://github.com/openai/codex/issues/15311) — No `PermissionRequest` hook for external UIs → use `CommandApproval`
-- [#17333](https://github.com/openai/codex/issues/17333) — No `TaskCompleted` event
+- [#15311](https://github.com/openai/codex/issues/15311) — No PermissionRequest hook for external UIs -> use `CommandApproval`
+- [#17333](https://github.com/openai/codex/issues/17333) — No TaskCompleted event
 
 ---
 
 ## Platform notes
 
-| Platform | Native hooks | Extended daemon |
-|---|---|---|
-| macOS | Yes | Yes |
-| Windows | Yes (v0.120.0+, April 2026) | Yes |
-| Linux (community build) | Yes | Yes (manual App Server) |
+| Platform | How to get the Codex app | Native hooks | Extended daemon |
+|---|---|---|---|
+| **macOS** | Download .dmg from [openai.com/codex](https://openai.com/codex/) | Yes | Yes |
+| **Windows** | [Microsoft Store](https://apps.microsoft.com/detail/9plm9xgg6vks) (v0.120.0+) | Yes | Yes |
+| **Linux** | Community build ([codex-desktop-linux](https://github.com/ilysenko/codex-desktop-linux)) | Yes | Yes |
