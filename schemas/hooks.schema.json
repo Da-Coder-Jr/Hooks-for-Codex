@@ -1,0 +1,137 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/da-coder-jr/hooks-for-codex/schemas/hooks.schema.json",
+  "title": "Codex Hooks Configuration",
+  "description": "Schema for hooks.json files used by hooks-for-codex",
+  "type": "object",
+  "properties": {
+    "hooks": {
+      "type": "object",
+      "description": "Hook rules organized by event name",
+      "properties": {
+        "SessionStart": { "$ref": "#/$defs/ruleGroupArray" },
+        "SessionEnd": { "$ref": "#/$defs/ruleGroupArray" },
+        "UserPromptSubmit": { "$ref": "#/$defs/ruleGroupArray" },
+        "Stop": { "$ref": "#/$defs/ruleGroupArray" },
+        "StopFailure": { "$ref": "#/$defs/ruleGroupArray" },
+        "PreToolUse": { "$ref": "#/$defs/ruleGroupArray" },
+        "PostToolUse": { "$ref": "#/$defs/ruleGroupArray" },
+        "PostToolUseFailure": { "$ref": "#/$defs/ruleGroupArray" },
+        "PermissionRequest": { "$ref": "#/$defs/ruleGroupArray" },
+        "PermissionDenied": { "$ref": "#/$defs/ruleGroupArray" },
+        "Notification": { "$ref": "#/$defs/ruleGroupArray" },
+        "FileChanged": { "$ref": "#/$defs/ruleGroupArray" },
+        "ConfigChange": { "$ref": "#/$defs/ruleGroupArray" },
+        "CwdChanged": { "$ref": "#/$defs/ruleGroupArray" }
+      },
+      "additionalProperties": false
+    },
+    "disableAllHooks": {
+      "type": "boolean",
+      "description": "Disable all hooks globally",
+      "default": false
+    }
+  },
+  "$defs": {
+    "ruleGroupArray": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/ruleGroup" }
+    },
+    "ruleGroup": {
+      "type": "object",
+      "required": ["hooks"],
+      "properties": {
+        "matcher": {
+          "type": "string",
+          "description": "Pattern to match against the event's matcher field. Empty or \"*\" matches all. Pipe-separated values for exact match. Otherwise treated as regex."
+        },
+        "hooks": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/hookDefinition" },
+          "minItems": 1
+        }
+      }
+    },
+    "hookDefinition": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["command", "http", "prompt"],
+          "description": "Hook type"
+        },
+        "command": {
+          "type": "string",
+          "description": "Shell command to execute (type: command)"
+        },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "description": "HTTP endpoint to POST to (type: http)"
+        },
+        "prompt": {
+          "type": "string",
+          "description": "LLM prompt template. Use $ARGUMENTS for the event payload. (type: prompt)"
+        },
+        "headers": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "description": "HTTP headers. Supports $ENV_VAR interpolation. (type: http)"
+        },
+        "allowedEnvVars": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Environment variables allowed in header interpolation (type: http)"
+        },
+        "model": {
+          "type": "string",
+          "description": "LLM model to use for evaluation (type: prompt)"
+        },
+        "timeout": {
+          "type": "number",
+          "minimum": 1,
+          "description": "Timeout in seconds"
+        },
+        "if": {
+          "type": "string",
+          "description": "Expression filter for tool events, e.g. \"shell(rm *)\" or \"apply_patch(*.js)\""
+        },
+        "async": {
+          "type": "boolean",
+          "default": false,
+          "description": "Run hook in background without blocking"
+        },
+        "once": {
+          "type": "boolean",
+          "default": false,
+          "description": "Only run this hook once per session"
+        },
+        "statusMessage": {
+          "type": "string",
+          "description": "Custom message to display while hook is running"
+        },
+        "shell": {
+          "type": "string",
+          "enum": ["bash", "powershell", "sh"],
+          "default": "bash",
+          "description": "Shell to use for command execution"
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "command" } } },
+          "then": { "required": ["command"] }
+        },
+        {
+          "if": { "properties": { "type": { "const": "http" } } },
+          "then": { "required": ["url"] }
+        },
+        {
+          "if": { "properties": { "type": { "const": "prompt" } } },
+          "then": { "required": ["prompt"] }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "name": "hooks-for-codex",
+  "version": "1.0.0",
+  "description": "A comprehensive hooks system for OpenAI Codex CLI — bringing Claude Code-level lifecycle hooks to Codex",
+  "main": "src/index.js",
+  "bin": {
+    "codex-hooks": "./bin/codex-hooks.js"
+  },
+  "scripts": {
+    "test": "node tests/run.js",
+    "lint": "node --check src/*.js",
+    "validate-schema": "node -e \"require('./src/config.js').validateFile(process.argv[1])\" --"
+  },
+  "keywords": [
+    "codex",
+    "openai",
+    "hooks",
+    "cli",
+    "agent",
+    "lifecycle",
+    "automation"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "src/",
+    "bin/",
+    "schemas/",
+    "examples/",
+    "templates/",
+    "install.sh",
+    "README.md"
+  ]
+}
