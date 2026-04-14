@@ -1,0 +1,96 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '{\"systemMessage\":\"Hooks are active. Session started at '$(date)'.\"}'",
+            "timeout": 3,
+            "once": true,
+            "statusMessage": "Initializing session hooks..."
+          }
+        ]
+      }
+    ],
+
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "INPUT=$(cat); PROMPT=$(echo \"$INPUT\" | jq -r '.prompt // \"\"'); echo \"[$(date)] User prompt: $PROMPT\" >> /tmp/codex-hooks.log",
+            "timeout": 3,
+            "async": true
+          }
+        ]
+      }
+    ],
+
+    "PreToolUse": [
+      {
+        "matcher": "shell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "INPUT=$(cat); CMD=$(echo \"$INPUT\" | jq -r '.tool_input.command // \"\"'); if echo \"$CMD\" | grep -qEi 'rm\\s+-rf\\s+(/|~|\\$HOME)'; then echo 'Blocked: dangerous rm command' >&2; exit 2; fi; echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"defer\"}}'",
+            "timeout": 5,
+            "if": "shell(rm *)",
+            "statusMessage": "Checking for dangerous commands..."
+          }
+        ]
+      },
+      {
+        "matcher": "shell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "INPUT=$(cat); CMD=$(echo \"$INPUT\" | jq -r '.tool_input.command // \"\"'); echo \"[$(date)] PRE shell: $CMD\" >> /tmp/codex-hooks.log; echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"defer\"}}'",
+            "timeout": 5,
+            "async": true
+          }
+        ]
+      },
+      {
+        "matcher": "apply_patch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "INPUT=$(cat); FILE=$(echo \"$INPUT\" | jq -r '.tool_input.file_path // \"unknown\"'); echo \"[$(date)] PRE apply_patch: $FILE\" >> /tmp/codex-hooks.log",
+            "timeout": 5,
+            "async": true
+          }
+        ]
+      }
+    ],
+
+    "PostToolUse": [
+      {
+        "matcher": "shell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "INPUT=$(cat); CMD=$(echo \"$INPUT\" | jq -r '.tool_input.command // \"\"'); EXIT=$(echo \"$INPUT\" | jq -r '.tool_output.exit_code // \"?\"'); echo \"[$(date)] POST shell (exit $EXIT): $CMD\" >> /tmp/codex-hooks.log",
+            "timeout": 5,
+            "async": true
+          }
+        ]
+      }
+    ],
+
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "INPUT=$(cat); ACTIVE=$(echo \"$INPUT\" | jq -r '.stop_hook_active // false'); if [ \"$ACTIVE\" = \"true\" ]; then exit 0; fi; echo \"[$(date)] Agent stopped\" >> /tmp/codex-hooks.log",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

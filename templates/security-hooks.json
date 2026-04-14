@@ -1,0 +1,66 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "shell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "INPUT=$(cat); CMD=$(echo \"$INPUT\" | jq -r '.tool_input.command // \"\"'); BLOCKED='rm -rf|mkfs|dd if=|:(){ :|:& };:|chmod 777|curl.*|.*> /dev/sd|shutdown|reboot|passwd|useradd|userdel'; if echo \"$CMD\" | grep -qEi \"$BLOCKED\"; then echo \"Potentially dangerous command blocked: $CMD\" >&2; exit 2; fi; echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"defer\"}}'",
+            "timeout": 5,
+            "statusMessage": "Security check..."
+          }
+        ]
+      },
+      {
+        "matcher": "shell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "INPUT=$(cat); CMD=$(echo \"$INPUT\" | jq -r '.tool_input.command // \"\"'); if echo \"$CMD\" | grep -qEi '(api[_-]?key|secret|password|token|credential)\\s*='; then echo 'Command may expose secrets' >&2; exit 2; fi",
+            "timeout": 5,
+            "statusMessage": "Checking for secrets..."
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "INPUT=$(cat); PROMPT=$(echo \"$INPUT\" | jq -r '.prompt // \"\"'); if echo \"$PROMPT\" | grep -qEi '(ignore previous|disregard|forget your instructions|system prompt)'; then echo 'Suspicious prompt pattern detected' >&2; exit 2; fi",
+            "timeout": 3,
+            "statusMessage": "Validating prompt..."
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "apply_patch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "INPUT=$(cat); FILE=$(echo \"$INPUT\" | jq -r '.tool_input.file_path // \"\"'); if echo \"$FILE\" | grep -qEi '\\.(env|pem|key|secret|credentials)$'; then echo '{\"systemMessage\":\"Warning: A sensitive file was modified: '\"$FILE\"'\"}'; fi",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '{\"systemMessage\":\"Security hooks are active. Dangerous commands and secret exposure will be blocked.\"}'",
+            "timeout": 3,
+            "once": true
+          }
+        ]
+      }
+    ]
+  }
+}
