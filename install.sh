@@ -1,16 +1,20 @@
 #!/usr/bin/env bash
-# install.sh — Set up hooks-for-codex for the OpenAI Codex desktop app
+#
+# install.sh — Set up hooks for the Codex desktop app
 #
 # This script:
-#   1. Detects your OS and Codex installation
-#   2. Enables the codex_hooks feature flag in config.toml
-#   3. Optionally installs a starter hooks.json
-#   4. Optionally installs the 'ws' package for the extended daemon
-#   5. Prints next steps
+#   1. Enables the codex_hooks feature flag in ~/.codex/config.toml
+#   2. Copies hook scripts to ~/.codex/hooks/
+#   3. Installs hooks.json (or a preset) to ~/.codex/hooks.json
+#   4. Prints next steps
+#
+# Usage:
+#   bash install.sh                  # install all hooks
+#   bash install.sh --preset=security   # install only security hooks
+#   bash install.sh --preset=logging    # install only logging hooks
 
 set -euo pipefail
 
-RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
@@ -20,153 +24,144 @@ NC='\033[0m'
 info()    { echo -e "${BLUE}[info]${NC}  $*"; }
 ok()      { echo -e "${GREEN}[ok]${NC}    $*"; }
 warn()    { echo -e "${YELLOW}[warn]${NC}  $*"; }
-error()   { echo -e "${RED}[error]${NC} $*"; }
 section() { echo -e "\n${BOLD}$*${NC}"; }
 
-# ── Detect OS ────────────────────────────────────────────────────────
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
+HOOKS_DIR="$CODEX_HOME/hooks"
+CONFIG_FILE="$CODEX_HOME/config.toml"
+HOOKS_JSON="$CODEX_HOME/hooks.json"
 
-OS="$(uname -s)"
-case "$OS" in
-  Darwin)  PLATFORM="macOS" ;;
-  Linux)   PLATFORM="Linux" ;;
-  MINGW*|MSYS*|CYGWIN*)  PLATFORM="Windows" ;;
-  *)       PLATFORM="Unknown" ;;
-esac
+# Parse --preset argument
+PRESET=""
+for arg in "$@"; do
+  case "$arg" in
+    --preset=*) PRESET="${arg#--preset=}" ;;
+  esac
+done
 
-# ── Detect CODEX_HOME ────────────────────────────────────────────────
-
-if [ -n "${CODEX_HOME:-}" ]; then
-  CODEX_DIR="$CODEX_HOME"
-else
-  CODEX_DIR="$HOME/.codex"
-fi
-
-section "hooks-for-codex installer"
-info "Platform:   $PLATFORM"
-info "Codex home: $CODEX_DIR"
-info "Project:    $(pwd)"
+section "Hooks for Codex — Installer"
+info "Codex home: $CODEX_HOME"
 echo ""
 
-# ── 1. Check Codex is installed ──────────────────────────────────────
+# ── 1. Create directories ───────────────────────────────────────────
 
-section "Step 1: Checking Codex desktop app installation"
+section "Step 1: Setting up directories"
 
-if [ -d "$CODEX_DIR" ]; then
-  ok "Codex config dir exists: $CODEX_DIR"
-else
-  info "Creating Codex config dir: $CODEX_DIR"
-  mkdir -p "$CODEX_DIR"
-  ok "Created $CODEX_DIR"
-fi
+mkdir -p "$CODEX_HOME"
+mkdir -p "$HOOKS_DIR"
+ok "Directories ready"
 
-# ── 2. Enable the feature flag ───────────────────────────────────────
+# ── 2. Enable the feature flag ──────────────────────────────────────
 
 section "Step 2: Enabling codex_hooks feature flag"
 
-CONFIG_FILE="$CODEX_DIR/config.toml"
-
 if [ -f "$CONFIG_FILE" ]; then
   if grep -q "codex_hooks = true" "$CONFIG_FILE" 2>/dev/null; then
-    ok "codex_hooks = true already set in $CONFIG_FILE"
-  else
-    # Add feature flag
-    if grep -q "\[features\]" "$CONFIG_FILE"; then
-      # Insert after [features]
-      sed -i.bak 's/\[features\]/[features]\ncodex_hooks = true/' "$CONFIG_FILE"
+    ok "codex_hooks = true already set"
+  elif grep -q "codex_hooks" "$CONFIG_FILE" 2>/dev/null; then
+    # Flag exists but is false — flip it
+    if [[ "$(uname)" == "Darwin" ]]; then
+      sed -i '' 's/codex_hooks = false/codex_hooks = true/' "$CONFIG_FILE"
     else
-      printf '\n[features]\ncodex_hooks = true\n' >> "$CONFIG_FILE"
+      sed -i 's/codex_hooks = false/codex_hooks = true/' "$CONFIG_FILE"
     fi
-    ok "Added codex_hooks = true to $CONFIG_FILE"
+    ok "Flipped codex_hooks to true"
+  elif grep -q "\[features\]" "$CONFIG_FILE" 2>/dev/null; then
+    # [features] section exists, add the flag
+    if [[ "$(uname)" == "Darwin" ]]; then
+      sed -i '' '/\[features\]/a\
+codex_hooks = true' "$CONFIG_FILE"
+    else
+      sed -i '/\[features\]/a codex_hooks = true' "$CONFIG_FILE"
+    fi
+    ok "Added codex_hooks = true under [features]"
+  else
+    # No [features] section — append it
+    printf '\n[features]\ncodex_hooks = true\n' >> "$CONFIG_FILE"
+    ok "Added [features] section with codex_hooks = true"
   fi
 else
   printf '[features]\ncodex_hooks = true\n' > "$CONFIG_FILE"
-  ok "Created $CONFIG_FILE with codex_hooks = true"
+  ok "Created config.toml with codex_hooks = true"
 fi
 
-# ── 3. Optionally create a project hooks.json ────────────────────────
+# ── 3. Copy hook scripts ────────────────────────────────────────────
 
-section "Step 3: Project hooks.json"
+section "Step 3: Installing hook scripts"
 
-PROJECT_HOOKS_DIR="$(pwd)/.codex"
-PROJECT_HOOKS_FILE="$PROJECT_HOOKS_DIR/hooks.json"
+SCRIPTS=(
+  session_start.py
+  pre_tool_use_guard.py
+  post_tool_use_logger.py
+  user_prompt_filter.py
+  stop_continue.py
+  stop_notify.py
+)
 
-if [ -f "$PROJECT_HOOKS_FILE" ]; then
-  ok "Project hooks.json already exists: $PROJECT_HOOKS_FILE"
+for script in "${SCRIPTS[@]}"; do
+  src="$SCRIPT_DIR/hooks/$script"
+  dst="$HOOKS_DIR/$script"
+  if [ -f "$src" ]; then
+    cp "$src" "$dst"
+    chmod +x "$dst"
+    ok "Installed $script"
+  else
+    warn "Script not found: $src"
+  fi
+done
+
+# ── 4. Install hooks.json ───────────────────────────────────────────
+
+section "Step 4: Installing hooks.json"
+
+if [ -n "$PRESET" ]; then
+  PRESET_FILE="$SCRIPT_DIR/presets/$PRESET.json"
+  if [ -f "$PRESET_FILE" ]; then
+    cp "$PRESET_FILE" "$HOOKS_JSON"
+    ok "Installed preset: $PRESET"
+  else
+    warn "Preset not found: $PRESET_FILE"
+    warn "Available presets: security, logging"
+    info "Falling back to default hooks.json"
+    cp "$SCRIPT_DIR/hooks.json" "$HOOKS_JSON"
+    ok "Installed default hooks.json"
+  fi
 else
-  read -rp "Create a starter hooks.json in .codex/hooks.json? [Y/n] " ANSWER
-  ANSWER="${ANSWER:-Y}"
-  if [[ "$ANSWER" =~ ^[Yy] ]]; then
-    mkdir -p "$PROJECT_HOOKS_DIR"
-    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    TEMPLATE="$SCRIPT_DIR/templates/basic-hooks.json"
-    if [ -f "$TEMPLATE" ]; then
-      cp "$TEMPLATE" "$PROJECT_HOOKS_FILE"
+  if [ -f "$HOOKS_JSON" ]; then
+    warn "hooks.json already exists at $HOOKS_JSON"
+    read -rp "Overwrite? [y/N] " ANSWER
+    if [[ "$ANSWER" =~ ^[Yy] ]]; then
+      cp "$SCRIPT_DIR/hooks.json" "$HOOKS_JSON"
+      ok "Overwritten"
     else
-      cat > "$PROJECT_HOOKS_FILE" << 'JSON'
-{
-  "hooks": {
-    "PreToolUse": [],
-    "PostToolUse": [],
-    "Stop": [],
-    "PreFilePatch": [],
-    "PostFilePatch": []
-  }
-}
-JSON
+      info "Kept existing hooks.json"
     fi
-    ok "Created $PROJECT_HOOKS_FILE"
-    info "Edit this file to add your hook commands."
   else
-    info "Skipped. Run 'codex-hooks init' to create one later."
+    cp "$SCRIPT_DIR/hooks.json" "$HOOKS_JSON"
+    ok "Installed hooks.json"
   fi
 fi
 
-# ── 4. Check Node.js and install ws ─────────────────────────────────
+# ── 5. Summary ──────────────────────────────────────────────────────
 
-section "Step 4: Extended daemon (optional)"
-
-NODE_VERSION=$(node --version 2>/dev/null || echo "")
-if [ -z "$NODE_VERSION" ]; then
-  warn "Node.js not found. The codex-hooks-daemon requires Node.js 18+."
-else
-  NODE_MAJOR=$(echo "$NODE_VERSION" | sed 's/v\([0-9]*\).*/\1/')
-  if [ "$NODE_MAJOR" -ge 18 ]; then
-    ok "Node.js $NODE_VERSION"
-  else
-    warn "Node.js $NODE_VERSION found, but version 18+ is required."
-  fi
-
-  # Check for ws
-  if node -e "require('ws')" &>/dev/null 2>&1; then
-    ok "'ws' package already installed"
-  else
-    read -rp "Install 'ws' package for extended hooks (apply_patch, file change approvals)? [Y/n] " WS_ANSWER
-    WS_ANSWER="${WS_ANSWER:-Y}"
-    if [[ "$WS_ANSWER" =~ ^[Yy] ]]; then
-      npm install ws
-      ok "Installed 'ws' package"
-    else
-      info "Skipped. Extended hooks (daemon) won't be available without 'ws'."
-    fi
-  fi
-fi
-
-# ── 5. Summary ───────────────────────────────────────────────────────
-
-section "Done! Next steps:"
+section "Done!"
 echo ""
-echo "  NATIVE HOOKS (hooks.json — works now):"
-echo "  ─────────────────────────────────────"
-echo "  • Edit $PROJECT_HOOKS_FILE"
-echo "  • Restart the Codex desktop app for the feature flag to take effect"
-echo "  • Run 'codex-hooks list' to see loaded hooks"
-echo "  • Run 'codex-hooks validate' to check for errors"
+echo "  Installed files:"
+echo "    $CONFIG_FILE         (feature flag)"
+echo "    $HOOKS_JSON   (hook configuration)"
+echo "    $HOOKS_DIR/             (hook scripts)"
 echo ""
-echo "  EXTENDED HOOKS (daemon — covers apply_patch + file approvals):"
-echo "  ───────────────────────────────────────────────────────────────"
-echo "  • Open the Codex desktop app (App Server starts automatically)"
-echo "  • Start daemon:     codex-hooks-daemon"
-echo "  • Add PreFilePatch, PostFilePatch, or CommandApproval rules to hooks.json"
+echo "  Next steps:"
+echo "    1. Restart the Codex desktop app"
+echo "    2. Open a thread and try a command — hooks will fire!"
+echo "    3. Check ~/.codex/hooks/activity.log for logged commands"
 echo ""
-echo "  DOCS: https://github.com/Da-Coder-Jr/Hooks-for-Codex"
+echo "  To customize:"
+echo "    Edit $HOOKS_JSON to enable/disable hooks"
+echo "    Edit scripts in $HOOKS_DIR/ to change behavior"
+echo ""
+echo "  Presets available:"
+echo "    bash install.sh --preset=security   (block dangerous commands + secrets)"
+echo "    bash install.sh --preset=logging    (log everything, no blocking)"
 echo ""
