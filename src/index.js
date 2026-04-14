@@ -3,52 +3,60 @@
 /**
  * hooks-for-codex
  *
- * A comprehensive hooks system for OpenAI Codex CLI, inspired by
- * Claude Code's lifecycle hooks.  Provides deterministic control over
- * the Codex agent loop through user-defined shell commands, HTTP
- * endpoints, and LLM prompt evaluations.
+ * Lifecycle hooks for the OpenAI Codex desktop app.
+ * Brings Claude Code-level hook power to Codex.
  *
- * Usage:
+ * TWO TIERS:
+ *   Tier 1 — Native hooks via hooks.json (5 events, shell commands only)
+ *   Tier 2 — Extended hooks via App Server daemon (file patches, approvals, turn events)
  *
+ * Quick usage:
  *   const { HooksEngine } = require("hooks-for-codex");
- *
  *   const engine = new HooksEngine({ projectDir: "/path/to/project" });
  *
- *   // Before a tool runs
- *   const result = await engine.preToolUse("shell", { command: "rm -rf /" });
- *   if (!result.allowed) {
- *     console.log("Blocked:", result.reason);
- *   }
+ *   // Fire a hook event manually
+ *   const result = await engine.fire("PreToolUse", {
+ *     tool_name: "Bash",
+ *     tool_input: { command: "rm -rf /" }
+ *   });
+ *   if (result.blocked) console.log("Blocked:", result.blockReason);
  *
- *   // After a tool runs
- *   await engine.postToolUse("shell", { command: "npm test" }, { exit_code: 0 });
- *
- *   // When agent stops
- *   const stopResult = await engine.stop();
- *   if (stopResult.blocked) {
- *     // Force agent to continue
- *   }
+ *   // Start extended hooks daemon
+ *   const { AppServerDaemon } = require("hooks-for-codex");
+ *   const daemon = new AppServerDaemon({ engine, wsUrl: "ws://127.0.0.1:4500" });
+ *   daemon.start();
  */
 
 const { HooksEngine, HookResult } = require("./engine");
-const { HookEvent, EVENT_NAMES, BLOCKING_EVENTS, MATCHABLE_EVENTS } = require("./events");
+const { AppServerClient, AppServerDaemon } = require("./app-server");
+const {
+  HookTier, HookEvent, EVENT_NAMES,
+  NATIVE_EVENT_NAMES, EXTENDED_EVENT_NAMES,
+  BLOCKING_EVENTS, MATCHABLE_EVENTS,
+} = require("./events");
 const { compileMatcher, matchesPattern, evaluateIf } = require("./matchers");
 const { loadConfig, validateFile, initConfig, discoverConfigFiles } = require("./config");
+const { runHook, runCommandHook, runHttpHook, runPromptHook } = require("./runner");
 const {
-  runHook,
-  runCommandHook,
-  runHttpHook,
-  runPromptHook,
-} = require("./runner");
+  CODEX_HOME, PATHS,
+  enableHooksFeatureFlag, isHooksEnabled, ensureCodexDir, readToml,
+} = require("./codex-adapter");
 
 module.exports = {
-  // Core
+  // Core engine
   HooksEngine,
   HookResult,
 
-  // Events
+  // App Server daemon (Tier 2 / extended hooks)
+  AppServerClient,
+  AppServerDaemon,
+
+  // Event definitions
+  HookTier,
   HookEvent,
   EVENT_NAMES,
+  NATIVE_EVENT_NAMES,
+  EXTENDED_EVENT_NAMES,
   BLOCKING_EVENTS,
   MATCHABLE_EVENTS,
 
@@ -57,15 +65,23 @@ module.exports = {
   matchesPattern,
   evaluateIf,
 
-  // Config
+  // Configuration
   loadConfig,
   validateFile,
   initConfig,
   discoverConfigFiles,
 
-  // Runners
+  // Hook runners
   runHook,
   runCommandHook,
   runHttpHook,
   runPromptHook,
+
+  // Codex desktop app utilities
+  CODEX_HOME,
+  PATHS,
+  enableHooksFeatureFlag,
+  isHooksEnabled,
+  ensureCodexDir,
+  readToml,
 };

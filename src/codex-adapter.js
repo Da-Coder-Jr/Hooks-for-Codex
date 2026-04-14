@@ -2,237 +2,176 @@
 
 const fs = require("fs");
 const path = require("path");
-const { HooksEngine } = require("./engine");
 
 /**
- * CodexAdapter integrates the hooks engine with the Codex CLI agent loop.
+ * Utilities for integrating hooks-for-codex with the Codex desktop app.
  *
- * Codex CLI (codex-rs) processes tool calls in its agent loop and currently
- * only emits hook events for the Bash/shell tool.  This adapter provides a
- * wrapper layer that can be used to:
+ * The Codex app (desktop + CLI) stores config at:
+ *   - Global:        ~/.codex/config.toml  +  ~/.codex/hooks.json
+ *   - Project:       .codex/config.toml    +  .codex/hooks.json
+ *   - Project local: .codex/config.toml    +  .codex/hooks.local.json  (gitignored)
  *
- *   1. Intercept ALL tool calls (shell, apply_patch, web search, MCP tools)
- *   2. Map Codex-native tool names to normalized names
- *   3. Provide a drop-in integration for the Codex config system
- *   4. Enable the full hooks feature flag and configuration
+ * The hooks feature flag must be enabled in config.toml:
+ *   [features]
+ *   codex_hooks = true
  *
- * Integration approaches:
- *   A. Wrapper script — wraps the Codex binary and intercepts I/O
- *   B. Config injection — generates hooks.json in the right locations
- *   C. Direct API — import and call from a Node.js integration layer
+ * The App Server (for extended/Tier-2 hooks) must be started with:
+ *   codex app-server --listen ws://127.0.0.1:4500
+ *
+ * On macOS this is done automatically when the desktop app is running.
+ * On Windows (v0.120.0+) it is also available.
+ * On Linux (community build) it may need manual configuration.
  */
 
-/** Map of Codex-internal tool names to normalized hook tool names */
-const TOOL_NAME_MAP = {
-  "container.exec": "shell",
-  shell: "shell",
-  apply_patch: "apply_patch",
-  update_plan: "update_plan",
-  web_search: "web_search",
-  // MCP tools keep their original names
+const CODEX_HOME = process.env.CODEX_HOME || path.join(process.env.HOME || "~", ".codex");
+
+const PATHS = {
+  globalConfig: path.join(CODEX_HOME, "config.toml"),
+  globalHooks: path.join(CODEX_HOME, "hooks.json"),
+  globalAgentsMd: path.join(CODEX_HOME, "AGENTS.md"),
+  projectConfig: (dir) => path.join(dir, ".codex", "config.toml"),
+  projectHooks: (dir) => path.join(dir, ".codex", "hooks.json"),
+  projectHooksLocal: (dir) => path.join(dir, ".codex", "hooks.local.json"),
 };
 
-function normalizeToolName(raw) {
-  return TOOL_NAME_MAP[raw] || raw;
-}
-
-class CodexAdapter {
-  /**
-   * @param {object} [options]
-   * @param {string} [options.projectDir]
-   * @param {boolean} [options.debug]
-   * @param {object} [options.llmEvaluator]
-   */
-  constructor(options = {}) {
-    this.engine = new HooksEngine(options);
-    this.sessionId = `codex-${Date.now()}`;
-    this.turnCount = 0;
-  }
-
-  /**
-   * Call at the start of a Codex session.
-   */
-  async onSessionStart(source = "startup", model = "") {
-    return this.engine.fire("SessionStart", {
-      session_id: this.sessionId,
-      source,
-      model,
-    });
-  }
-
-  /**
-   * Call when the session ends.
-   */
-  async onSessionEnd(reason = "other") {
-    return this.engine.fire("SessionEnd", {
-      session_id: this.sessionId,
-      reason,
-    });
-  }
-
-  /**
-   * Call when a user submits a prompt. Returns whether to proceed.
-   */
-  async onUserPrompt(prompt) {
-    this.turnCount++;
-    const result = await this.engine.fire("UserPromptSubmit", {
-      session_id: this.sessionId,
-      prompt,
-    });
-    return {
-      allowed: !result.blocked,
-      reason: result.blockReason,
-      systemMessage: result.systemMessage,
-    };
-  }
-
-  /**
-   * Call BEFORE a tool executes. Returns permission decision.
-   *
-   * @param {string} toolName - Raw Codex tool name (e.g. "container.exec", "apply_patch")
-   * @param {object} toolInput - Tool input parameters
-   * @param {string} [toolUseId]
-   */
-  async onPreToolUse(toolName, toolInput, toolUseId) {
-    const normalized = normalizeToolName(toolName);
-    return this.engine.preToolUse(normalized, toolInput, toolUseId);
-  }
-
-  /**
-   * Call AFTER a tool executes successfully.
-   */
-  async onPostToolUse(toolName, toolInput, toolOutput, toolUseId) {
-    const normalized = normalizeToolName(toolName);
-    return this.engine.postToolUse(normalized, toolInput, toolOutput, toolUseId);
-  }
-
-  /**
-   * Call AFTER a tool execution fails.
-   */
-  async onPostToolUseFailure(toolName, toolInput, error, isInterrupt = false, toolUseId) {
-    const normalized = normalizeToolName(toolName);
-    return this.engine.fire("PostToolUseFailure", {
-      session_id: this.sessionId,
-      tool_name: normalized,
-      tool_input: toolInput,
-      error: typeof error === "string" ? error : error.message,
-      is_interrupt: isInterrupt,
-      tool_use_id: toolUseId || "",
-    });
-  }
-
-  /**
-   * Call when the agent stops. Returns whether to force continuation.
-   */
-  async onStop(stopHookActive = false) {
-    const result = await this.engine.stop(stopHookActive);
-    return {
-      shouldContinue: result.blocked,
-      reason: result.blockReason,
-      systemMessage: result.systemMessage,
-    };
-  }
-
-  /**
-   * Call when a permission dialog would be shown.
-   */
-  async onPermissionRequest(toolName, toolInput) {
-    const normalized = normalizeToolName(toolName);
-    const result = await this.engine.fire("PermissionRequest", {
-      session_id: this.sessionId,
-      tool_name: normalized,
-      tool_input: toolInput,
-    });
-    return {
-      decision: result.permissionDecision || "defer",
-      reason: result.permissionDecisionReason,
-      updatedInput: result.updatedInput,
-    };
-  }
-
-  /**
-   * Call when a file changes on disk.
-   */
-  async onFileChanged(filePath, changeType = "modified") {
-    return this.engine.fire("FileChanged", {
-      session_id: this.sessionId,
-      file_path: filePath,
-      change_type: changeType,
-    });
-  }
-
-  /**
-   * Get the hooks engine for direct access.
-   */
-  getEngine() {
-    return this.engine;
-  }
-}
-
 /**
- * Enable hooks in the Codex config.toml by ensuring the feature flag is set.
- * @param {string} configPath - Path to config.toml
+ * Enable the codex_hooks feature flag in a config.toml file.
+ * Creates the file if it doesn't exist.
+ *
+ * @param {string} [configPath] - Defaults to ~/.codex/config.toml
  */
 function enableHooksFeatureFlag(configPath) {
-  let content = "";
-  if (fs.existsSync(configPath)) {
-    content = fs.readFileSync(configPath, "utf-8");
-  }
+  const target = configPath || PATHS.globalConfig;
+  const dir = path.dirname(target);
 
-  if (content.includes("codex_hooks")) {
-    // Replace existing value
-    content = content.replace(/codex_hooks\s*=\s*\w+/, "codex_hooks = true");
-  } else {
-    // Add feature flag section
-    if (content.includes("[features]")) {
-      content = content.replace("[features]", "[features]\ncodex_hooks = true");
-    } else {
-      content += "\n[features]\ncodex_hooks = true\n";
-    }
-  }
-
-  const dir = path.dirname(configPath);
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
-  fs.writeFileSync(configPath, content);
+
+  let content = "";
+  if (fs.existsSync(target)) {
+    content = fs.readFileSync(target, "utf-8");
+  }
+
+  if (content.includes("codex_hooks = true")) {
+    return { changed: false, path: target };
+  }
+
+  if (/codex_hooks\s*=\s*\w+/.test(content)) {
+    content = content.replace(/codex_hooks\s*=\s*\w+/, "codex_hooks = true");
+  } else if (content.includes("[features]")) {
+    content = content.replace(/\[features\]/, "[features]\ncodex_hooks = true");
+  } else {
+    content += (content.endsWith("\n") ? "" : "\n") + "\n[features]\ncodex_hooks = true\n";
+  }
+
+  fs.writeFileSync(target, content, "utf-8");
+  return { changed: true, path: target };
 }
 
 /**
- * Generate the Codex-compatible hooks.json from an enhanced config.
- * Strips fields that Codex's native parser doesn't understand, keeping
- * only what the Codex Rust runtime can parse.
- *
- * @param {object} enhancedConfig - Full hooks-for-codex config
- * @returns {object} Codex-compatible hooks.json
+ * Check if the codex_hooks feature flag is enabled.
+ * @param {string} [projectDir]
+ * @returns {{ enabled: boolean, path: string|null }}
  */
-function toCodexNativeFormat(enhancedConfig) {
-  const native = { hooks: {} };
+function isHooksEnabled(projectDir) {
+  const paths = [
+    PATHS.globalConfig,
+    projectDir ? PATHS.projectConfig(projectDir) : null,
+  ].filter(Boolean);
 
-  const codexEvents = ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop"];
+  for (const p of paths) {
+    if (fs.existsSync(p)) {
+      const content = fs.readFileSync(p, "utf-8");
+      if (content.includes("codex_hooks = true")) {
+        return { enabled: true, path: p };
+      }
+    }
+  }
+  return { enabled: false, path: null };
+}
 
-  for (const [eventName, rules] of Object.entries(enhancedConfig)) {
-    if (!codexEvents.includes(eventName)) continue;
+/**
+ * Ensure the .codex directory exists for a project.
+ * @param {string} [projectDir]
+ */
+function ensureCodexDir(projectDir) {
+  const dir = projectDir
+    ? path.join(projectDir, ".codex")
+    : CODEX_HOME;
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  return dir;
+}
 
-    native.hooks[eventName] = rules.map((rule) => ({
-      matcher: rule.matcher || "",
-      hooks: (rule.hooks || [])
-        .filter((h) => h.type === "command") // Codex native only supports command hooks
-        .map((h) => ({
-          type: "command",
-          command: h.command,
-          timeout: h.timeout || 5,
-        })),
-    }));
+/**
+ * Read the Codex config.toml as a plain object (basic TOML parser).
+ * Only handles simple key=value and [section] tables.
+ * @param {string} filePath
+ * @returns {object}
+ */
+function readToml(filePath) {
+  if (!fs.existsSync(filePath)) return {};
+
+  const lines = fs.readFileSync(filePath, "utf-8").split("\n");
+  const result = {};
+  let currentSection = null;
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+
+    const sectionMatch = line.match(/^\[([^\]]+)\]$/);
+    if (sectionMatch) {
+      currentSection = sectionMatch[1];
+      const parts = currentSection.split(".");
+      let obj = result;
+      for (const part of parts) {
+        if (!obj[part]) obj[part] = {};
+        obj = obj[part];
+      }
+      continue;
+    }
+
+    const kvMatch = line.match(/^([^=]+)=(.*)$/);
+    if (kvMatch) {
+      const key = kvMatch[1].trim();
+      let val = kvMatch[2].trim();
+      // Strip quotes
+      if ((val.startsWith('"') && val.endsWith('"')) ||
+          (val.startsWith("'") && val.endsWith("'"))) {
+        val = val.slice(1, -1);
+      } else if (val === "true") {
+        val = true;
+      } else if (val === "false") {
+        val = false;
+      } else if (!isNaN(val)) {
+        val = Number(val);
+      }
+
+      if (currentSection) {
+        const parts = currentSection.split(".");
+        let obj = result;
+        for (const part of parts) {
+          if (!obj[part]) obj[part] = {};
+          obj = obj[part];
+        }
+        obj[key] = val;
+      } else {
+        result[key] = val;
+      }
+    }
   }
 
-  return native;
+  return result;
 }
 
 module.exports = {
-  CodexAdapter,
-  TOOL_NAME_MAP,
-  normalizeToolName,
+  CODEX_HOME,
+  PATHS,
   enableHooksFeatureFlag,
-  toCodexNativeFormat,
+  isHooksEnabled,
+  ensureCodexDir,
+  readToml,
 };
