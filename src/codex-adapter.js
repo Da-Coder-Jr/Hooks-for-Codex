@@ -6,7 +6,7 @@ const path = require("path");
 /**
  * Utilities for integrating hooks-for-codex with the Codex desktop app.
  *
- * The Codex app (desktop + CLI) stores config at:
+ * The Codex desktop app stores config at:
  *   - Global:        ~/.codex/config.toml  +  ~/.codex/hooks.json
  *   - Project:       .codex/config.toml    +  .codex/hooks.json
  *   - Project local: .codex/config.toml    +  .codex/hooks.local.json  (gitignored)
@@ -15,12 +15,8 @@ const path = require("path");
  *   [features]
  *   codex_hooks = true
  *
- * The App Server (for extended/Tier-2 hooks) must be started with:
- *   codex app-server --listen ws://127.0.0.1:4500
- *
- * On macOS this is done automatically when the desktop app is running.
- * On Windows (v0.120.0+) it is also available.
- * On Linux (community build) it may need manual configuration.
+ * The App Server runs automatically inside the Codex desktop app.
+ * For extended/Tier-2 hooks, the daemon connects to it via WebSocket.
  */
 
 const CODEX_HOME = process.env.CODEX_HOME || path.join(process.env.HOME || "~", ".codex");

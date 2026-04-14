@@ -3,9 +3,8 @@
 /**
  * app-server.js — Codex App Server JSON-RPC client
  *
- * The Codex App Server exposes a JSON-RPC 2.0 API via:
- *   - stdio (default): `codex app-server`
- *   - WebSocket:       `codex app-server --listen ws://127.0.0.1:4500`
+ * The Codex desktop app runs an internal App Server exposing a JSON-RPC
+ * 2.0 API.  The daemon connects to it via WebSocket (default port 4500).
  *
  * This module connects to the App Server and translates its server-push
  * notifications into hooks-for-codex events, firing them through the
@@ -266,9 +265,8 @@ class AppServerDaemon {
 
   start() {
     this.client.connect();
-    this.logger("[codex-hooks-daemon] Starting. Waiting for Codex App Server…");
-    this.logger("[codex-hooks-daemon] Make sure Codex is running with:");
-    this.logger("[codex-hooks-daemon]   codex app-server --listen ws://127.0.0.1:4500");
+    this.logger("[codex-hooks-daemon] Starting. Waiting for Codex desktop app…");
+    this.logger("[codex-hooks-daemon] Make sure the Codex desktop app is open.");
   }
 
   stop() {

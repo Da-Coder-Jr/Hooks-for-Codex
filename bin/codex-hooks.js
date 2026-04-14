@@ -66,8 +66,8 @@ QUICK START
 
   For apply_patch / file-change hooks (the native system misses these):
   6. npm install ws                   # install WebSocket dependency
-  7. codex app-server --listen ws://127.0.0.1:4500   # in one terminal
-  8. codex-hooks-daemon               # in another terminal
+  7. Open the Codex desktop app       # App Server starts automatically
+  8. codex-hooks-daemon               # start the extended hooks daemon
 
 DOCS
   See README.md or https://github.com/Da-Coder-Jr/Hooks-for-Codex
