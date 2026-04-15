@@ -6,8 +6,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ~/.codex/hooks/session_start.py",
-            "statusMessage": "Loading session context"
+            "command": "python3 ~/.codex/hooks/_lib/dispatcher.py SessionStart",
+            "timeout": 15,
+            "statusMessage": "Loading session context (project detection, git info, framework detection)"
           }
         ]
       }
@@ -18,8 +19,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ~/.codex/hooks/pre_tool_use_guard.py",
-            "statusMessage": "Checking command safety"
+            "command": "python3 ~/.codex/hooks/_lib/dispatcher.py PreToolUse",
+            "timeout": 10,
+            "statusMessage": "Checking command safety (security, secrets, git protection, Docker, K8s, IaC)"
           }
         ]
       }
@@ -30,8 +32,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ~/.codex/hooks/post_tool_use_logger.py",
-            "timeout": 10
+            "command": "python3 ~/.codex/hooks/_lib/dispatcher.py PostToolUse",
+            "timeout": 15,
+            "statusMessage": "Analyzing output (errors, code quality, performance, testing, monitoring)"
           }
         ]
       }
@@ -41,8 +44,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ~/.codex/hooks/user_prompt_filter.py",
-            "statusMessage": "Scanning prompt"
+            "command": "python3 ~/.codex/hooks/_lib/dispatcher.py UserPromptSubmit",
+            "timeout": 10,
+            "statusMessage": "Scanning prompt for secrets and injection"
           }
         ]
       }
@@ -52,8 +56,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ~/.codex/hooks/stop_notify.py",
-            "timeout": 10
+            "command": "python3 ~/.codex/hooks/_lib/dispatcher.py Stop",
+            "timeout": 10,
+            "statusMessage": "Checking for auto-continue conditions"
           }
         ]
       }
