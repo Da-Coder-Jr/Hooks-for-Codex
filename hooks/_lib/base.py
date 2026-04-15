@@ -24,9 +24,23 @@ def get_command(data):
 
 
 def get_command_output(data):
-    """Extract the command output from PostToolUse hook data."""
-    return data.get("tool_output", {}).get("stdout", "") + \
-           data.get("tool_output", {}).get("stderr", "")
+    """Extract the command output from PostToolUse hook data.
+
+    Handles multiple Codex/Claude Code formats:
+    - tool_output: {stdout: ..., stderr: ...}  (Claude Code format)
+    - tool_response: "..."                      (Codex desktop app format)
+    - output: "..."                             (legacy/fallback)
+    """
+    # Claude Code format: nested stdout/stderr dict
+    tool_output = data.get("tool_output")
+    if isinstance(tool_output, dict):
+        return tool_output.get("stdout", "") + tool_output.get("stderr", "")
+    # Codex desktop app format: flat string
+    tool_response = data.get("tool_response", "")
+    if tool_response:
+        return str(tool_response)
+    # Fallback
+    return str(data.get("output", ""))
 
 
 def get_prompt(data):

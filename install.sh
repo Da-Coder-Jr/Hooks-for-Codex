@@ -76,8 +76,8 @@ info "Source:     $SCRIPT_DIR"
 echo ""
 
 # Count hooks
-TOTAL_HOOKS=$(grep -rh '@registry.hook' "$SCRIPT_DIR/hooks/" --include="*.py" 2>/dev/null | wc -l)
-TOTAL_FILES=$(find "$SCRIPT_DIR/hooks" -name "*.py" -not -path "*__pycache__*" -not -name "__init__.py" | wc -l)
+TOTAL_HOOKS=$(grep -rh '@registry.hook' "$SCRIPT_DIR/hooks/" --include="*.py" 2>/dev/null | wc -l | tr -d '[:space:]')
+TOTAL_FILES=$(find "$SCRIPT_DIR/hooks" -name "*.py" -not -path "*__pycache__*" -not -name "__init__.py" | wc -l | tr -d '[:space:]')
 info "Hooks: $TOTAL_HOOKS across $TOTAL_FILES files in ${#CATEGORIES[@]} categories"
 echo ""
 
@@ -163,7 +163,7 @@ for cat in "${CATEGORIES[@]}"; do
     fi
 
     file_count=$((file_count + 1))
-    hooks_in_file=$(grep -c '@registry.hook' "$src_file" 2>/dev/null || echo 0)
+    hooks_in_file=$(grep -c '@registry.hook' "$src_file" 2>/dev/null) || hooks_in_file=0
     hook_count=$((hook_count + hooks_in_file))
   done
 
@@ -240,7 +240,7 @@ if ! $DRY_RUN; then
   section "Step 5: Verifying installation"
 
   # Test that Python can import the base module
-  if python3 -c "import sys; sys.path.insert(0, '$HOOKS_DIR'); from _lib.base import HookRegistry" 2>/dev/null; then
+  if PYTHONPATH="$HOOKS_DIR" python3 -c "from _lib.base import HookRegistry" 2>/dev/null; then
     ok "Base library imports successfully"
   else
     error "Failed to import base library"
